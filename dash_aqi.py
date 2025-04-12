@@ -39,17 +39,51 @@ def calculate_india_aqi(pm25, pm10):
     pm10_aqi = get_aqi_subindex(pm10, pm10_bp)
     return max(pm25_aqi, pm10_aqi)
 
-app.layout = dbc.Container([
-    html.H2("🌱 AQI-Based Plant Recommendation Dashboard", className="text-center my-4"),
-    html.Div(id="city-display", className="text-center mb-3", style={"fontWeight": "bold", "fontSize": "18px"}),
+def get_aqi_category(aqi):
+    if aqi <= 50:
+        return "Good", "#009966"
+    elif aqi <= 100:
+        return "Satisfactory", "#ffde33"
+    elif aqi <= 200:
+        return "Moderate", "#ff9933"
+    elif aqi <= 300:
+        return "Poor", "#cc0033"
+    elif aqi <= 400:
+        return "Very Poor", "#660099"
+    else:
+        return "Severe", "#7e0023"
+
+app.layout = html.Div(
+    style={
+        "backgroundColor": "#000000",  # Soft light-blue background
+        "minHeight": "100vh",
+        "padding": "20px"
+    },
+    children=[
+        dbc.Container([
+    html.H2(
+        "🌱 AQI-Based Plant Recommendation Dashboard",
+        className="text-center my-4",
+        style={"color": "black"}
+    ),
+    html.Div(
+        id="city-display",
+        className="text-center mb-3",
+        style={
+            "fontWeight": "bold",
+            "fontSize": "18px",
+            "color": "black"
+        }
+    ),
 
     dbc.Row([
         dbc.Col([
             dbc.Card([
-                dbc.CardHeader("Air Quality Parameters (Auto-Fetch or Manual)"),
+                dbc.CardHeader("Air Quality Parameters"),
                 dbc.CardBody([
-                    dbc.Input(id="manual-city", placeholder="Enter City (Optional)", type="text", className="mb-2"),
-                    dbc.Button("Auto-Fetch Air Data", id="auto-fetch-btn", color="info", className="mb-3 w-100"),
+                    dbc.Input(id="manual-city", placeholder="Enter City", type="text", className="mb-2"),
+                    dbc.Button("Fetch by City", id="fetch-city-btn", color="primary", className="mb-2 w-100"),
+                    dbc.Button("Auto-Fetch by Location", id="auto-fetch-btn", color="info", className="mb-3 w-100"),
 
                     dbc.Input(id="pm2_5", placeholder="PM2.5", type="number", className="mb-2"),
                     dbc.Input(id="pm10", placeholder="PM10", type="number", className="mb-2"),
@@ -72,10 +106,14 @@ app.layout = dbc.Container([
 
         dbc.Col([
             html.Div(id="prediction-output", className="mb-4"),
-            dcc.Graph(id="confidence-graph")
+            dcc.Graph(id="confidence-graph"),
+            dcc.Graph(id="all-confidence-graph") 
         ], width=8)
+           
     ])
-], fluid=True)
+], fluid=True, style={"backgroundColor": "#ccf7a6", "borderRadius": "15px", "padding": "30px"})
+]
+)
 
 @app.callback(
     Output("pm2_5", "value"),
@@ -93,24 +131,32 @@ app.layout = dbc.Container([
     Output("aqi", "value"),
     Output("city-display", "children"),
     Input("auto-fetch-btn", "n_clicks"),
+    Input("fetch-city-btn", "n_clicks"),
     State("manual-city", "value"),
+    prevent_initial_call=True
 )
-def autofill_air_data(n_clicks, manual_city):
-    if not n_clicks:
-        return [dash.no_update] * 14
+def fetch_air_quality(auto_clicks, city_clicks, manual_city):
+    ctx = dash.callback_context
+    if not ctx.triggered:
+        raise dash.exceptions.PreventUpdate
 
+    trigger = ctx.triggered[0]["prop_id"].split(".")[0]
+    
     try:
-        if manual_city:
+        if trigger == "fetch-city-btn" and manual_city:
             geo_url = f"http://api.openweathermap.org/geo/1.0/direct?q={manual_city}&limit=1&appid={OWM_API_KEY}"
             geo_res = requests.get(geo_url).json()
             if not geo_res:
                 return [None]*13 + [f"❌ City '{manual_city}' not found."]
             lat, lon = geo_res[0]['lat'], geo_res[0]['lon']
             city_name = geo_res[0]['name']
-        else:
+
+        elif trigger == "auto-fetch-btn":
             ip_info = requests.get("https://ipinfo.io").json()
             lat, lon = map(float, ip_info["loc"].split(","))
             city_name = ip_info.get("city", "Your Location")
+        else:
+            return [None]*13 + ["❌ Invalid trigger or missing city name."]
 
         url = f"http://api.openweathermap.org/data/2.5/air_pollution?lat={lat}&lon={lon}&appid={OWM_API_KEY}"
         response = requests.get(url)
@@ -125,7 +171,7 @@ def autofill_air_data(n_clicks, manual_city):
             no2 = round(comp.get("no2", 0), 2)
             nox = round(no + no2, 2)
             nh3 = round(comp.get("nh3", 0), 2)
-            co = round(comp.get("co", 0), 2)
+            co =  round(random.uniform(1.0, 5.0), 2)
             so2 = round(comp.get("so2", 0), 2)
             o3 = round(comp.get("o3", 0), 2)
             benzene = round(random.uniform(1.0, 5.0), 2)
@@ -146,6 +192,7 @@ def autofill_air_data(n_clicks, manual_city):
 @app.callback(
     Output("prediction-output", "children"),
     Output("confidence-graph", "figure"),
+    Output("all-confidence-graph", "figure"),
     Input("predict-btn", "n_clicks"),
     State("pm2_5", "value"),
     State("pm10", "value"),
@@ -163,7 +210,7 @@ def autofill_air_data(n_clicks, manual_city):
 )
 def get_predictions(n_clicks, pm2_5, pm10, no, no2, nox, nh3, co, so2, o3, benzene, toluene, xylene, aqi):
     if not n_clicks:
-        return dash.no_update, dash.no_update
+        return dash.no_update, dash.no_update, dash.no_update
 
     data = {
         "PM2_5": pm2_5, "PM10": pm10, "NO": no, "NO2": no2, "NOx": nox,
@@ -174,25 +221,40 @@ def get_predictions(n_clicks, pm2_5, pm10, no, no2, nox, nh3, co, so2, o3, benze
     try:
         response = requests.post("https://fastapi-voting-based-model-api-for-plant.onrender.com/predict", json=data)
         if response.status_code == 200:
-            results = response.json().get("recommendations", [])
-            if not results:
-                return [html.P("No prediction returned.")], {}
+            json_data = response.json()
+            top3 = json_data.get("recommendations", [])
+            all_preds = json_data.get("all_predictions", [])
 
-            items = [html.P(f"{i+1}. {res['plant']} ({res['confidence']*100:.1f}%)") for i, res in enumerate(results)]
-            fig = px.bar(
-                x=[r["plant"] for r in results],
-                y=[r["confidence"] for r in results],
+            if not top3:
+                return [html.P("No prediction returned.")], {}, {}
+
+            items = [html.P(f"{i+1}. {res['plant']} ({res['confidence']*100:.1f}%)") for i, res in enumerate(top3)]
+
+            fig_top3 = px.bar(
+                x=[r["plant"] for r in top3],
+                y=[r["confidence"] for r in top3],
                 labels={"x": "Plant", "y": "Confidence"},
-                title="Prediction Confidence (%)",
-                color=[r["plant"] for r in results]
+                title="Top 3 Recommended Plants",
+                color=[r["plant"] for r in top3]
             )
-            fig.update_layout(template="plotly_white", yaxis=dict(range=[0, 1]))
+            fig_top3.update_layout(template="plotly_white", yaxis=dict(range=[0, 1]))
 
-            return items, fig
+            # 🔽 Sort all predictions for horizontal bar chart
+            sorted_all = sorted(all_preds, key=lambda x: x["confidence"])
+            fig_all = px.bar(
+                x=[r["confidence"] for r in sorted_all],
+                y=[r["plant"] for r in sorted_all],
+                orientation='h',
+                labels={"x": "Confidence", "y": "Plant"},
+                title="All Plant Predictions (Low to High Confidence)"
+            )
+            fig_all.update_layout(template="plotly_white", xaxis=dict(range=[0, 1]))
+
+            return items, fig_top3, fig_all
         else:
-            return [html.P(f"Prediction failed: {response.status_code}")], {}
+            return [html.P(f"Prediction failed: {response.status_code}")], {}, {}
     except Exception as e:
-        return [html.P(f"Error: {e}")], {}
+        return [html.P(f"Error: {e}")], {}, {}
 
 if __name__ == "__main__":
     app.run(debug=True)
