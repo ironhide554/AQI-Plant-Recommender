@@ -2,3 +2,5 @@ dash
 dash-bootstrap-components
 requests
 plotly
+pymongo
+random
