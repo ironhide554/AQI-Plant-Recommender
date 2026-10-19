@@ -1,16 +1,18 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 
 class Data(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
     PM2_5: float = Field(..., alias='PM2.5')
-    PM10: float = Field(..., alias='PM10')
-    NO: float = Field(..., alias='NO')
-    NO2: float = Field(..., alias='NO2')
-    NOx: float = Field(..., alias='NOx')
-    NH3: float = Field(..., alias='NH3')
-    CO: float = Field(..., alias='CO')
-    SO2: float = Field(..., alias='SO2')
-    O3: float = Field(..., alias='O3')
-    Benzene: float = Field(..., alias='Benzene')
-    Toluene: float = Field(..., alias='Toluene')
-    Xylene: float = Field(..., alias='Xylene')
-    AQI: float = Field(..., alias='AQI')
+    PM10: float
+    NO: float
+    NO2: float
+    NOx: float
+    NH3: float
+    CO: float
+    SO2: float
+    O3: float
+    Benzene: float
+    Toluene: float
+    Xylene: float
+    AQI: float
